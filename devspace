@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+terminator_id=$(xdotool search --onlyvisible --class 'terminator' | head -n 1)
+
+if [[ -z "$terminator_id" ]]; then
+    echo "Terminator window not found"
+    terminator >/dev/null 2>&1 &
+    terminator_id=$(timeout 10s xdotool search --sync --onlyvisible --class 'terminator' | head -n 1)
+    if [[ -z "$terminator_id" ]]; then
+        echo "Error: Terminator failed to open a window." >&2
+        exit 1
+    fi
+fi
+
+firefox_id=$(xdotool search --onlyvisible --class 'firefox-esr' | head -n 1)
+
+if [[ -z "$firefox_id" ]]; then
+    echo "Firefox window not found"
+    firefox-esr >/dev/null 2>&1 &
+    firefox_id=$(timeout 10s xdotool search --sync --onlyvisible --class 'firefox-esr' | head -n 1)
+
+    if [[ -z "$firefox_id" ]]; then
+        echo "Error: Firefox failed to open a window." >&2
+        exit 1
+    fi
+fi
+
+echo "Terminator window ID: $terminator_id"
+echo "Firefox window ID: $firefox_id"
+
+terminator_x=$(xdotool getwindowgeometry --shell "$terminator_id" | grep '^X=' | cut -d= -f2)
+terminator_width=$(xdotool getwindowgeometry --shell "$terminator_id" | grep '^WIDTH=' | cut -d= -f2)
+
+if (( terminator_x == 10 && terminator_width == 682 )) &&
+   xprop -id "$terminator_id" _NET_WM_STATE |
+   grep -q '_NET_WM_STATE_MAXIMIZED_VERT'; then
+    echo "Terminator position and width are correct"
+else
+    xdotool windowactivate --sync "$terminator_id"
+    xdotool key --clearmodifiers super+Left
+fi
+
+firefox_x=$(xdotool getwindowgeometry --shell "$firefox_id" | grep '^X=' | cut -d= -f2)
+
+firefox_width=$(xdotool getwindowgeometry --shell "$firefox_id" | grep '^WIDTH=' | cut -d= -f2)
+
+if (( firefox_x + 26 == 683 && firefox_width - 52 == 683 )) &&
+   xprop -id "$firefox_id" _NET_WM_STATE |
+   grep -q '_NET_WM_STATE_MAXIMIZED_VERT'; then
+    echo "Firefox is already vertically maximized"
+else
+    xdotool windowactivate --sync "$firefox_id"
+    xdotool key --clearmodifiers super+Right
+fi
