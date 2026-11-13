@@ -58,6 +58,20 @@ else
     terminator_target_width=$workspace_width
 fi
 echo "Firefox window ID: $firefox_id"
+if [[ "$layout" == "toggle" ]]; then
+    terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
+    terminator_x=$(grep '^X=' <<< "$terminator_geometry" | cut -d= -f2)
+    terminator_y=$(grep '^Y=' <<< "$terminator_geometry" | cut -d= -f2)
+    terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
+    terminator_height=$(grep '^HEIGHT=' <<< "$terminator_geometry" | cut -d= -f2)
+    if (( terminator_x == 12 && terminator_y == 105 &&
+          terminator_width == terminator_target_width &&
+          terminator_height == terminator_target_height )); then
+        layout="side"
+    else
+        layout="stacked"
+    fi
+fi
 if [[ "$layout" == "stacked" ]]; then
     echo "Stacked layout selected"
     terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
