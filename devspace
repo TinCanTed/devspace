@@ -50,6 +50,13 @@ if [[ -z "$firefox_id" ]]; then
 fi
 
 echo "Terminator window ID: $terminator_id"
+terminator_base_width=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/base size/ {print $(NF-2)}')
+terminator_width_increment=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/resize increment/ {print $(NF-2)}')
+if [[ "$terminator_base_width" =~ ^[0-9]+$ && "$terminator_width_increment" =~ ^[1-9][0-9]*$ ]]; then
+    terminator_target_width=$(( terminator_base_width + ((workspace_width - terminator_base_width) / terminator_width_increment) * terminator_width_increment ))
+else
+    terminator_target_width=$workspace_width
+fi
 echo "Firefox window ID: $firefox_id"
 if [[ "$layout" == "stacked" ]]; then
     echo "Stacked layout selected"
@@ -59,7 +66,7 @@ if [[ "$layout" == "stacked" ]]; then
     terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
     terminator_height=$(grep '^HEIGHT=' <<< "$terminator_geometry" | cut -d= -f2)
     if (( terminator_x == 12 && terminator_y == 105 &&
-          terminator_width == 1362 && terminator_height == terminator_target_height )); then
+          terminator_width == terminator_target_width && terminator_height == terminator_target_height )); then
         echo "Terminator is already correctly positioned!"
     else
         echo "Terminator needs repositioning."
