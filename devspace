@@ -6,8 +6,6 @@ workspace_width=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f3)
 workspace_height=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f4)
 half_width=$(( workspace_width / 2 ))
 half_height=$(( workspace_height / 2 ))
-terminator_frame_height=32
-terminator_target_height=$(( half_height - terminator_frame_height ))
 firefox_frame_height=52
 firefox_target_height=$(( half_height + firefox_frame_height ))
 firefox_frame_width=52
@@ -21,15 +19,34 @@ terminator_target_x=$workspace_x
 firefox_target_x=$(( workspace_x + half_width ))
 firefox_stacked_x=$(( workspace_x - firefox_frame_width / 2 ))
 firefox_frame_top=24
-firefox_stacked_y=$(( firefox_target_y - firefox_frame_top ))
+
 echo "Workspace width: $workspace_width | Half: $half_width | Firefox target X: $firefox_target_x"
 
-terminator_id=$(xdotool search --onlyvisible --class 'terminator' | head -n 1)
+terminator_id=$(
+    for id in $(xdotool search --onlyvisible --class terminator); do
+        if xprop -id "$id" _MOTIF_WM_HINTS 2>/dev/null |
+           grep -q '= 0x2, 0x0, 0x0'; then
+            echo "$id"
+            break
+        fi
+    done
+)
 
 if [[ -z "$terminator_id" ]]; then
     echo "Terminator window not found"
-    terminator >/dev/null 2>&1 &
-    terminator_id=$(timeout 10s xdotool search --sync --onlyvisible --class 'terminator' | head -n 1)
+    terminator --borderless >/dev/null 2>&1 &
+    terminator_id=$(
+    for ((attempt=0; attempt<20; attempt++)); do
+        for id in $(xdotool search --onlyvisible --class terminator); do
+            if xprop -id "$id" _MOTIF_WM_HINTS 2>/dev/null |
+               grep -q '= 0x2, 0x0, 0x0'; then
+                echo "$id"
+                exit 0
+            fi
+        done
+        sleep 0.5
+    done
+)
     if [[ -z "$terminator_id" ]]; then
         echo "Error: Terminator failed to open a window." >&2
         exit 1
@@ -52,11 +69,22 @@ fi
 echo "Terminator window ID: $terminator_id"
 terminator_base_width=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/base size/ {print $(NF-2)}')
 terminator_width_increment=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/resize increment/ {print $(NF-2)}')
+terminator_base_height=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/base size/ {print $NF}')
+terminator_height_increment=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/resize increment/ {print $NF}')
+if [[ "$terminator_base_height" =~ ^[0-9]+$ && "$terminator_height_increment" =~ ^[1-9][0-9]*$ ]]; then
+    terminator_target_height=$(( terminator_base_height + ((half_height - terminator_base_height) / terminator_height_increment) * terminator_height_increment ))
+else
+    terminator_target_height=$half_height
+fi
+
 if [[ "$terminator_base_width" =~ ^[0-9]+$ && "$terminator_width_increment" =~ ^[1-9][0-9]*$ ]]; then
     terminator_target_width=$(( terminator_base_width + ((workspace_width - terminator_base_width) / terminator_width_increment) * terminator_width_increment ))
+    terminator_side_width=$(( terminator_base_width + ((half_width - terminator_base_width) / terminator_width_increment) * terminator_width_increment ))
 else
     terminator_target_width=$workspace_width
+    terminator_side_width=$half_width
 fi
+
 echo "Firefox window ID: $firefox_id"
 if [[ "$layout" == "toggle" ]]; then
     terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
@@ -64,7 +92,7 @@ if [[ "$layout" == "toggle" ]]; then
     terminator_y=$(grep '^Y=' <<< "$terminator_geometry" | cut -d= -f2)
     terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
     terminator_height=$(grep '^HEIGHT=' <<< "$terminator_geometry" | cut -d= -f2)
-    if (( terminator_x == 12 && terminator_y == 105 &&
+    if (( terminator_x == terminator_target_x && terminator_y == terminator_target_y &&
           terminator_width == terminator_target_width &&
           terminator_height == terminator_target_height )); then
         layout="side"
@@ -79,7 +107,7 @@ if [[ "$layout" == "stacked" ]]; then
     terminator_y=$(grep '^Y=' <<< "$terminator_geometry" | cut -d= -f2)
     terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
     terminator_height=$(grep '^HEIGHT=' <<< "$terminator_geometry" | cut -d= -f2)
-    if (( terminator_x == 12 && terminator_y == 105 &&
+    if (( terminator_x == terminator_target_x && terminator_y == terminator_target_y &&
           terminator_width == terminator_target_width && terminator_height == terminator_target_height )); then
         echo "Terminator is already correctly positioned!"
     else
@@ -87,8 +115,12 @@ if [[ "$layout" == "stacked" ]]; then
         wmctrl -ir "$terminator_id" -b remove,maximized_vert
         wmctrl -ir "$terminator_id" -e 0,"$terminator_target_x","$terminator_target_y",-1,-1
         wmctrl -ir "$terminator_id" -e 0,-1,-1,-1,"$terminator_target_height"
-        wmctrl -ir "$terminator_id" -e 0,-1,-1,"$workspace_width",-1
+        wmctrl -ir "$terminator_id" -e 0,-1,-1,"$terminator_target_width",-1
     fi
+    terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
+    terminator_y=$(grep '^Y=' <<< "$terminator_geometry" | cut -d= -f2)
+    terminator_height=$(grep '^HEIGHT=' <<< "$terminator_geometry" | cut -d= -f2)
+    firefox_stacked_y=$(( terminator_y + terminator_height - firefox_frame_top ))
     firefox_geometry=$(xdotool getwindowgeometry --shell "$firefox_id")
     firefox_x=$(grep '^X=' <<< "$firefox_geometry" | cut -d= -f2)
     firefox_y=$(grep '^Y=' <<< "$firefox_geometry" | cut -d= -f2)
@@ -100,24 +132,30 @@ if [[ "$layout" == "stacked" ]]; then
     else
         echo "Firefox needs repositioning."
         wmctrl -ir "$firefox_id" -b remove,maximized_vert
-        wmctrl -ir "$firefox_id" -e 0,-1,-1,-1,"$firefox_target_height"
-        wmctrl -ir "$firefox_id" -e 0,-1,-1,"$firefox_target_width",-1
-        wmctrl -ir "$firefox_id" -e 0,"$firefox_stacked_x","$firefox_stacked_y",-1,-1
+        wmctrl -ir "$firefox_id" -e 0,"$firefox_stacked_x","$firefox_stacked_y","$firefox_target_width","$firefox_target_height"
     fi
 
 else
     echo "Side-by-side layout selected"
 
-    terminator_x=$(xdotool getwindowgeometry --shell "$terminator_id" | grep '^X=' | cut -d= -f2)
-    terminator_width=$(xdotool getwindowgeometry --shell "$terminator_id" | grep '^WIDTH=' | cut -d= -f2)
+    terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
+    terminator_x=$(grep '^X=' <<< "$terminator_geometry" | cut -d= -f2)
+    terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
 
-    if (( terminator_x == 10 && terminator_width == 682 )) &&
+    if (( terminator_x == terminator_target_x && terminator_width == terminator_side_width )) &&
        xprop -id "$terminator_id" _NET_WM_STATE |
        grep -q '_NET_WM_STATE_MAXIMIZED_VERT'; then
         echo "Terminator position and width are correct"
     else
-        xdotool windowactivate --sync "$terminator_id"
-        xdotool key --clearmodifiers super+Left
+        wmctrl -ir "$terminator_id" -b remove,maximized_vert
+        wmctrl -ir "$terminator_id" -e 0,"$terminator_target_x",-1,"$terminator_side_width",-1
+        wmctrl -ir "$terminator_id" -b add,maximized_vert
+        terminator_geometry=$(xdotool getwindowgeometry --shell "$terminator_id")
+        terminator_x=$(grep '^X=' <<< "$terminator_geometry" | cut -d= -f2)
+        terminator_width=$(grep '^WIDTH=' <<< "$terminator_geometry" | cut -d= -f2)
+        if (( terminator_x != terminator_target_x || terminator_width != terminator_side_width )); then
+            echo "Warning: Terminator did not reach its target position or width." >&2
+        fi
     fi
 
     firefox_x=$(xdotool getwindowgeometry --shell "$firefox_id" | grep '^X=' | cut -d= -f2)
