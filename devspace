@@ -6,10 +6,6 @@ workspace_width=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f3)
 workspace_height=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f4)
 half_width=$(( workspace_width / 2 ))
 half_height=$(( workspace_height / 2 ))
-firefox_frame_height=52
-firefox_target_height=$(( half_height + firefox_frame_height ))
-firefox_frame_width=52
-firefox_target_width=$(( workspace_width + firefox_frame_width ))
 workspace_x=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f1)
 workspace_y=$(xprop -root _NET_WORKAREA | cut -d= -f2 | cut -d, -f2)
 firefox_target_y=$(( workspace_y + half_height ))
@@ -17,8 +13,6 @@ terminator_target_y=$workspace_y
 
 terminator_target_x=$workspace_x
 firefox_target_x=$(( workspace_x + half_width ))
-firefox_stacked_x=$(( workspace_x - firefox_frame_width / 2 ))
-firefox_frame_top=24
 
 echo "Workspace width: $workspace_width | Half: $half_width | Firefox target X: $firefox_target_x"
 
@@ -65,7 +59,18 @@ if [[ -z "$firefox_id" ]]; then
         exit 1
     fi
 fi
-
+if xprop -id "$firefox_id" _NET_WM_STATE | grep -q '_NET_WM_STATE_MAXIMIZED_HORZ'; then
+    wmctrl -ir "$firefox_id" -b remove,maximized_horz
+    sleep 0.2
+fi
+IFS=', ' read -r left right top bottom <<< "$(xprop -id "$firefox_id" _GTK_FRAME_EXTENTS | cut -d= -f2)"
+firefox_frame_width=$(( left + right ))
+firefox_frame_height=$(( top + bottom ))
+firefox_frame_top=$top
+firefox_target_height=$(( half_height + firefox_frame_height ))
+firefox_target_width=$(( workspace_width + firefox_frame_width ))
+firefox_stacked_x=$(( workspace_x - firefox_frame_width / 2 ))
+echo "Firefox frame extents: left=$left right=$right top=$top bottom=$bottom"
 echo "Terminator window ID: $terminator_id"
 terminator_base_width=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/base size/ {print $(NF-2)}')
 terminator_width_increment=$(xprop -id "$terminator_id" WM_NORMAL_HINTS | awk '/resize increment/ {print $(NF-2)}')
@@ -162,7 +167,7 @@ else
 
     firefox_width=$(xdotool getwindowgeometry --shell "$firefox_id" | grep '^WIDTH=' | cut -d= -f2)
 
-    if (( firefox_x + 26 == 683 && firefox_width - 52 == 683 )) &&
+    if (( firefox_x + left == firefox_target_x && firefox_width - firefox_frame_width == half_width )) &&
        xprop -id "$firefox_id" _NET_WM_STATE |
        grep -q '_NET_WM_STATE_MAXIMIZED_VERT'; then
         echo "Firefox is already vertically maximized"
